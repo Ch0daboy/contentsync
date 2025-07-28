@@ -1,0 +1,148 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  platforms        Platform[]
+  originalContent  OriginalContent[]
+  generatedContent GeneratedContent[]
+  settings         UserSettings?
+  moderationLogs   ContentModerationLog[]
+
+  @@map("users")
+}
+
+model UserSettings {
+  id                    String @id @default(cuid())
+  userId                String @unique
+  user                  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  monitoringInterval    Int    @default(30) // minutes
+  autoGenerateContent   Boolean @default(true)
+  maxGenerationsPerDay  Int    @default(50)
+  preferredTone         String @default("professional")
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_settings")
+}
+
+model Platform {
+  id          String      @id @default(cuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name        String
+  type        PlatformType
+  url         String
+  isActive    Boolean     @default(true)
+  lastChecked DateTime?
+  metadata    Json?       // Store platform-specific data
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  originalContent OriginalContent[]
+  moderationLogs  ContentModerationLog[]
+
+  @@unique([userId, url])
+  @@map("platforms")
+}
+
+model OriginalContent {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platformId  String
+  platform    Platform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  
+  title       String
+  description String?
+  content     String
+  contentUrl  String   @unique
+  imageUrl    String?
+  publishedAt DateTime
+  contentHash String   @unique // For deduplication
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  generatedContent GeneratedContent[]
+
+  @@map("original_content")
+}
+
+model GeneratedContent {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  originalContentId String
+  originalContent   OriginalContent @relation(fields: [originalContentId], references: [id], onDelete: Cascade)
+  
+  targetPlatform    PlatformType
+  title             String
+  content           String
+  hashtags          String[]
+  status            ContentStatus   @default(UNSEEN)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("generated_content")
+}
+
+enum PlatformType {
+  YOUTUBE
+  BLOG_RSS
+  TWITTER
+  FACEBOOK
+  INSTAGRAM
+  TIKTOK
+  LINKEDIN
+  MANUAL
+}
+
+enum ContentStatus {
+  UNSEEN
+  SEEN
+  SAVED
+  DISCARDED
+  PUBLISHED
+}
+
+model ContentModerationLog {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platformId    String
+  platform      Platform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+
+  contentUrl    String
+  contentTitle  String
+  approved      Boolean
+  confidence    Float
+  flags         String[]
+  reasons       String[]
+  actions       String[]
+  metadata      Json?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("content_moderation_logs")
+  @@index([userId, createdAt])
+  @@index([approved, createdAt])
+}
